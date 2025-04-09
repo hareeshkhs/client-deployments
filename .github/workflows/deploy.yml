@@ -1,0 +1,54 @@
+name: 🚀 Deploy Schema Manager
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Which environment to deploy to?"
+        required: true
+        type: choice
+        options:
+          - pg-env-a
+          - pg-env-b
+          - both
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        env: [pg-env-a, pg-env-b]
+    if: ${{ github.event.inputs.environment == 'both' || github.event.inputs.environment == matrix.env }}
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Install PyYAML
+        run: pip install pyyaml
+
+      - name: Parse env-configs.yaml
+        id: config
+        run: |
+          CONFIG=$(python3 <<EOF
+          import yaml
+          with open('env-configs.yaml') as f:
+              data = yaml.safe_load(f)
+              env = data['${{ matrix.env }}']['dap_schema_manager']['data']
+              print(f"::set-output name=tag::{env['TAG']}")
+              print(f"::set-output name=db::{env['POSTGRES_DB']}")
+              print(f"::set-output name=user::{env['POSTGRES_USER']}")
+              print(f"::set-output name=schemas::{env['AVAILABLE_SCHEMAS']}")
+          EOF
+          )
+        shell: bash
+
+      - name: Set up kubeconfig
+        run: echo "${{ secrets[format('KUBECONFIG_{0}', matrix.env | upper) ] }}" > kubeconfig
+
+      - name: Deploy to ${{ matrix.env }}
+        env:
+          IMAGE_TAG: ${{ steps.config.outputs.tag }}
+        run: |
+          export KUBECONFIG=./kubeconfig
+          kubectl set image deployment/pg-app pg-app=ghcr.io/your-org/liquibase-schema-manager:$IMAGE_TAG --namespace=${{ matrix.env }}
+          kubectl rollout status deployment/pg-app --namespace=${{ matrix.env }}
