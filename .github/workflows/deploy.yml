@@ -36,16 +36,18 @@ jobs:
         if: github.event.inputs.environment == 'both' || github.event.inputs.environment == matrix.env
         id: config
         run: |
-          python3 <<EOF
+          python3 -c "
+          import os
           import yaml
           with open('env-configs.yaml') as f:
               data = yaml.safe_load(f)
               env = data['${{ matrix.env }}']['dap_schema_manager']['data']
-              print(f"::set-output name=tag::{env['TAG']}")
-              print(f"::set-output name=db::{env['POSTGRES_DB']}")
-              print(f"::set-output name=user::{env['POSTGRES_USER']}")
-              print(f"::set-output name=schemas::{env['AVAILABLE_SCHEMAS']}")
-          EOF
+              with open(os.environ['GITHUB_OUTPUT'], 'a') as fh:
+                  fh.write(f'tag={env[\"TAG\"]}\n')
+                  fh.write(f'db={env[\"POSTGRES_DB\"]}\n')
+                  fh.write(f'user={env[\"POSTGRES_USER\"]}\n')
+                  fh.write(f'schemas={env[\"AVAILABLE_SCHEMAS\"]}\n')
+          "
         shell: bash
 
       - name: Set up kubeconfig
