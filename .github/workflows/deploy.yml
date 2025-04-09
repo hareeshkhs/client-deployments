@@ -1,36 +1,62 @@
-name: Deploy Workflow
+name: 🚀 Deploy Schema Manager
 
 on:
   workflow_dispatch:
     inputs:
       environment:
-        description: "Deployment environment (dev, qa, or both)"
+        description: "Which environment to deploy to?"
         required: true
-        default: "dev"
         type: choice
         options:
-          - dev
-          - qa
+          - pg-env-a
+          - pg-env-b
           - both
 
 jobs:
   deploy:
-    if: github.event.inputs.environment != 'none'
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        env: [dev, qa]
+        env: [pg-env-a, pg-env-b]
 
     steps:
-      - name: Skip environment if not selected
+      - name: Skip run if not matching environment
         if: github.event.inputs.environment != 'both' && github.event.inputs.environment != matrix.env
-        run: echo "Skipping ${{ matrix.env }} environment."
+        run: echo "Skipping environment: ${{ matrix.env }}"
 
-      - name: Deploy to environment
+      - name: Checkout repo
+        if: github.event.inputs.environment == 'both' || github.event.inputs.environment == matrix.env
+        uses: actions/checkout@v4
+
+      - name: Install PyYAML
+        if: github.event.inputs.environment == 'both' || github.event.inputs.environment == matrix.env
+        run: pip install pyyaml
+
+      - name: Parse env-configs.yaml
+        if: github.event.inputs.environment == 'both' || github.event.inputs.environment == matrix.env
+        id: config
+        run: |
+          python3 <<EOF
+          import yaml
+          with open('env-configs.yaml') as f:
+              data = yaml.safe_load(f)
+              env = data['${{ matrix.env }}']['dap_schema_manager']['data']
+              print(f"::set-output name=tag::{env['TAG']}")
+              print(f"::set-output name=db::{env['POSTGRES_DB']}")
+              print(f"::set-output name=user::{env['POSTGRES_USER']}")
+              print(f"::set-output name=schemas::{env['AVAILABLE_SCHEMAS']}")
+          EOF
+        shell: bash
+
+      - name: Set up kubeconfig
+        if: github.event.inputs.environment == 'both' || github.event.inputs.environment == matrix.env
+        run: echo "${{ secrets[format('KUBECONFIG_{0}', toUpper(matrix.env))] }}" > kubeconfig
+
+      - name: Deploy to ${{ matrix.env }}
         if: github.event.inputs.environment == 'both' || github.event.inputs.environment == matrix.env
         env:
-          KUBECONFIG: ${{ secrets[format('KUBECONFIG_{0}', toUpper(matrix.env))] }}
+          IMAGE_TAG: ${{ steps.config.outputs.tag }}
         run: |
-          echo "Deploying to ${{ matrix.env }}..."
-          # Your deployment logic goes here, e.g.:
-          # kubectl --kubeconfig="$KUBECONFIG" apply -f deployment.yaml
+          export KUBECONFIG=./kubeconfig
+          kubectl set image deployment/pg-app pg-app=ghcr.io/your-org/liquibase-schema-manager:$IMAGE_TAG --namespace=${{ matrix.env }}
+          kubectl rollout status deployment/pg-app --namespace=${{ matrix.env }}
