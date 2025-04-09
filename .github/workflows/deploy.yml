@@ -18,18 +18,25 @@ jobs:
     strategy:
       matrix:
         env: [pg-env-a, pg-env-b]
-    if: ${{ github.event.inputs.environment == 'both' || github.event.inputs.environment == matrix.env }}
+
     steps:
+      - name: Skip run if not matching environment
+        if: github.event.inputs.environment != 'both' && github.event.inputs.environment != matrix.env
+        run: echo "Skipping environment: ${{ matrix.env }}"
+
       - name: Checkout repo
+        if: github.event.inputs.environment == 'both' || github.event.inputs.environment == matrix.env
         uses: actions/checkout@v4
 
       - name: Install PyYAML
+        if: github.event.inputs.environment == 'both' || github.event.inputs.environment == matrix.env
         run: pip install pyyaml
 
       - name: Parse env-configs.yaml
+        if: github.event.inputs.environment == 'both' || github.event.inputs.environment == matrix.env
         id: config
         run: |
-          CONFIG=$(python3 <<EOF
+          python3 <<EOF
           import yaml
           with open('env-configs.yaml') as f:
               data = yaml.safe_load(f)
@@ -39,13 +46,14 @@ jobs:
               print(f"::set-output name=user::{env['POSTGRES_USER']}")
               print(f"::set-output name=schemas::{env['AVAILABLE_SCHEMAS']}")
           EOF
-          )
         shell: bash
 
       - name: Set up kubeconfig
-        run: echo "${{ secrets[format('KUBECONFIG_{0}', matrix.env | upper) ] }}" > kubeconfig
+        if: github.event.inputs.environment == 'both' || github.event.inputs.environment == matrix.env
+        run: echo "${{ secrets[format('KUBECONFIG_{0}', toUpper(matrix.env))] }}" > kubeconfig
 
       - name: Deploy to ${{ matrix.env }}
+        if: github.event.inputs.environment == 'both' || github.event.inputs.environment == matrix.env
         env:
           IMAGE_TAG: ${{ steps.config.outputs.tag }}
         run: |

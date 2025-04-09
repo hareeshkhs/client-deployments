@@ -12,7 +12,7 @@ pg-env-b:
   dap_schema_manager:
     enabled: true
     data:
-      POSTGRES_DB: "liquibase2"
+      POSTGRES_DB: "liquibase3"
       POSTGRES_USER: "postgres"
       AVAILABLE_SCHEMAS: "postgres/core"
       POSTGRES_HOST: "host.docker.internal"
