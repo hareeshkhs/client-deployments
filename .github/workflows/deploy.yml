@@ -20,40 +20,40 @@ jobs:
         env: [pg-env-a, pg-env-b]
 
     steps:
-      - name: Skip run if not matching environment
-        if: github.event.inputs.environment != 'both' && github.event.inputs.environment != matrix.env
-        run: echo "Skipping environment: ${{ matrix.env }}"
+      - name: Evaluate condition
+        run: |
+          if [[ "${{ github.event.inputs.environment }}" != "both" && "${{ github.event.inputs.environment }}" != "${{ matrix.env }}" ]]; then
+            echo "Skipping environment: ${{ matrix.env }}"
+            exit 0
+          fi
 
       - name: Checkout repo
-        if: github.event.inputs.environment == 'both' || github.event.inputs.environment == matrix.env
         uses: actions/checkout@v4
 
       - name: Install PyYAML
-        if: github.event.inputs.environment == 'both' || github.event.inputs.environment == matrix.env
         run: pip install pyyaml
 
       - name: Parse env-configs.yaml
-        if: github.event.inputs.environment == 'both' || github.event.inputs.environment == matrix.env
         id: config
         run: |
-          python3 <<EOF
+          python3 -c "
+          import os
           import yaml
           with open('env-configs.yaml') as f:
               data = yaml.safe_load(f)
               env = data['${{ matrix.env }}']['dap_schema_manager']['data']
-              print(f"::set-output name=tag::{env['TAG']}")
-              print(f"::set-output name=db::{env['POSTGRES_DB']}")
-              print(f"::set-output name=user::{env['POSTGRES_USER']}")
-              print(f"::set-output name=schemas::{env['AVAILABLE_SCHEMAS']}")
-          EOF
+              with open(os.environ['GITHUB_OUTPUT'], 'a') as fh:
+                  fh.write(f'tag={env[\"TAG\"]}\n')
+                  fh.write(f'db={env[\"POSTGRES_DB\"]}\n')
+                  fh.write(f'user={env[\"POSTGRES_USER\"]}\n')
+                  fh.write(f'schemas={env[\"AVAILABLE_SCHEMAS\"]}\n')
+          "
         shell: bash
 
       - name: Set up kubeconfig
-        if: github.event.inputs.environment == 'both' || github.event.inputs.environment == matrix.env
         run: echo "${{ secrets[format('KUBECONFIG_{0}', toUpper(matrix.env))] }}" > kubeconfig
 
       - name: Deploy to ${{ matrix.env }}
-        if: github.event.inputs.environment == 'both' || github.event.inputs.environment == matrix.env
         env:
           IMAGE_TAG: ${{ steps.config.outputs.tag }}
         run: |
